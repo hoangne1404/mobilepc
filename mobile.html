@@ -16,7 +16,9 @@
     <div id="content" class="w-full max-w-md text-center space-y-8">
         <h1 class="text-3xl font-bold">iOS Screen Mirror</h1>
         
-        <div id="status-card" class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+        <div id="security-warning" class="hidden bg-red-600/20 border border-red-500 p-4 rounded-xl text-red-400 text-sm">
+            ⚠️ <strong>Secure Context Required:</strong> Screen mirroring requires HTTPS. Please use an HTTPS URL (e.g., via ngrok).
+        </div>
             <div id="status-icon" class="w-4 h-4 rounded-full bg-yellow-500 mx-auto mb-4 animate-pulse"></div>
             <p id="status-text" class="text-lg font-medium">Initializing connection...</p>
             <p id="target-id" class="text-sm text-gray-500 mt-2 font-mono"></p>
@@ -25,6 +27,11 @@
         <button id="start-btn" disabled class="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-xl font-bold text-xl transition-all transform active:scale-95 btn-glow">
             START MIRRORING
         </button>
+
+        <div class="text-left text-xs font-mono text-gray-500 bg-black/30 p-4 rounded-lg overflow-auto max-h-32">
+            <p class="font-bold border-b border-gray-700 mb-1">Debug Logs:</p>
+            <div id="debug-logs"></div>
+        </div>
 
         <div class="text-left text-sm text-gray-400 bg-gray-800/50 p-4 rounded-lg">
             <p class="font-bold mb-2">Instructions:</p>
@@ -45,6 +52,20 @@
         const statusText = document.getElementById('status-text');
         const targetIdText = document.getElementById('target-id');
         const startBtn = document.getElementById('start-btn');
+        const debugLogs = document.getElementById('debug-logs');
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `> ${msg}`;
+            debugLogs.prepend(div);
+            console.log(msg);
+        }
+
+        // 0. Check Security Context
+        if (window.isSecureContext === false && window.location.hostname !== 'localhost') {
+            document.getElementById('security-warning').classList.remove('hidden');
+            log("Error: Not in a secure context (HTTPS required)");
+        }
 
         if (!targetId) {
             statusText.textContent = "Error: No target ID found in URL.";
@@ -53,23 +74,35 @@
             targetIdText.textContent = `Target: ${targetId}`;
         }
 
-        const peer = new Peer();
+        const peer = new Peer(null, {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                ]
+            }
+        });
         let conn;
 
         peer.on('open', (id) => {
-            console.log('Mobile peer ID:', id);
+            log('Peer initialized: ' + id);
             connectToLaptop();
         });
 
         function connectToLaptop() {
             if (!targetId) return;
 
+            log("Connecting to target: " + targetId);
             statusText.textContent = "Connecting to laptop...";
             
             // 1. Establish Data Connection for metadata
-            conn = peer.connect(targetId);
+            conn = peer.connect(targetId, {
+                reliable: true
+            });
             
             conn.on('open', () => {
+                log("Data channel opened");
                 statusText.textContent = "Connected! Ready to stream.";
                 statusIcon.classList.replace('bg-yellow-500', 'bg-green-500');
                 statusIcon.classList.remove('animate-pulse');
@@ -87,14 +120,23 @@
         }
 
         startBtn.addEventListener('click', async () => {
+            log("Attempting to start capture...");
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                log("Error: getDisplayMedia not supported in this browser/context");
+                alert("Browser Error: Screen sharing is not supported. Please ensure you are using Safari on iOS and accessing via HTTPS.");
+                return;
+            }
+
             try {
                 // 2. Start Screen Capture
-                // iOS requires this to be inside a click handler
                 const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
+                    video: {
+                        cursor: "always"
+                    },
                     audio: true
                 });
 
+                log("Capture started successfully");
                 statusText.textContent = "Streaming screen...";
                 startBtn.textContent = "MIRRORING ACTIVE";
                 startBtn.classList.replace('bg-blue-600', 'bg-green-600');
