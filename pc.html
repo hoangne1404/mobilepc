@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laptop Receiver - Screen Mirror</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        #video-container {
+            transition: transform 0.3s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background-color: #000;
+            width: 100vw;
+            height: 100vh;
+        }
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white overflow-hidden">
+    <div id="setup-screen" class="flex flex-col items-center justify-center min-h-screen space-y-8">
+        <h1 class="text-3xl font-bold">Screen Mirroring - Laptop Receiver</h1>
+        <div id="qrcode" class="p-4 bg-white rounded-lg"></div>
+        <p class="text-gray-400">Scan this QR code with your iOS device to start mirroring</p>
+        <div id="status" class="text-yellow-500 font-mono">Initializing Peer...</div>
+    </div>
+
+    <div id="video-container" class="hidden">
+        <video id="remote-video" autoplay playsinline></video>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const setupScreen = document.getElementById('setup-screen');
+        const videoContainer = document.getElementById('video-container');
+        const remoteVideo = document.getElementById('remote-video');
+        const qrContainer = document.getElementById('qrcode');
+
+        // Generate a random ID for this session
+        const peer = new Peer();
+
+        peer.on('open', (id) => {
+            console.log('My peer ID is: ' + id);
+            statusEl.textContent = 'Waiting for connection...';
+            statusEl.classList.remove('text-yellow-500');
+            statusEl.classList.add('text-green-500');
+
+            // Construct mobile URL
+            // In a real scenario, this would be your ngrok/hosting URL
+            const mobileUrl = window.location.href.replace('pc.html', 'mobile.html') + '?id=' + id;
+            
+            new QRCode(qrContainer, {
+                text: mobileUrl,
+                width: 256,
+                height: 256,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        });
+
+        peer.on('call', (call) => {
+            console.log('Incoming call...');
+            statusEl.textContent = 'Connecting...';
+            
+            call.answer(); // Answer the call without a local stream
+            
+            call.on('stream', (remoteStream) => {
+                console.log('Received remote stream');
+                setupScreen.classList.add('hidden');
+                videoContainer.classList.remove('hidden');
+                
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.play();
+            });
+        });
+
+        peer.on('connection', (conn) => {
+            conn.on('data', (data) => {
+                if (data.type === 'orientation') {
+                    console.log('Orientation changed:', data.value);
+                    rotateVideo(data.value);
+                }
+            });
+        });
+
+        function rotateVideo(orientation) {
+            // orientation: 0 (portrait), 90 (landscape left), -90 (landscape right), 180 (portrait upside down)
+            if (orientation === 90 || orientation === -90) {
+                remoteVideo.style.transform = `rotate(${orientation}deg)`;
+                // Adjust scale to fit screen if needed
+                const scale = window.innerHeight / window.innerWidth;
+                // remoteVideo.style.transform += ` scale(${scale})`;
+            } else {
+                remoteVideo.style.transform = `rotate(${orientation}deg)`;
+            }
+        }
+
+        peer.on('error', (err) => {
+            console.error('Peer error:', err);
+            statusEl.textContent = 'Error: ' + err.type;
+            statusEl.classList.add('text-red-500');
+        });
+    </script>
+</body>
+</html>

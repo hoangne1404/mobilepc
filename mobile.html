@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Streamer - Screen Mirror</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        .btn-glow {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-6">
+    <div id="content" class="w-full max-w-md text-center space-y-8">
+        <h1 class="text-3xl font-bold">iOS Screen Mirror</h1>
+        
+        <div id="status-card" class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+            <div id="status-icon" class="w-4 h-4 rounded-full bg-yellow-500 mx-auto mb-4 animate-pulse"></div>
+            <p id="status-text" class="text-lg font-medium">Initializing connection...</p>
+            <p id="target-id" class="text-sm text-gray-500 mt-2 font-mono"></p>
+        </div>
+
+        <button id="start-btn" disabled class="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-xl font-bold text-xl transition-all transform active:scale-95 btn-glow">
+            START MIRRORING
+        </button>
+
+        <div class="text-left text-sm text-gray-400 bg-gray-800/50 p-4 rounded-lg">
+            <p class="font-bold mb-2">Instructions:</p>
+            <ul class="list-disc list-inside space-y-1">
+                <li>Ensure you are using Safari on iOS.</li>
+                <li>Tap "Start Mirroring" above.</li>
+                <li>Choose "Screen Recording" in the system dialog.</li>
+                <li>Keep this tab open while mirroring.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetId = urlParams.get('id');
+        
+        const statusIcon = document.getElementById('status-icon');
+        const statusText = document.getElementById('status-text');
+        const targetIdText = document.getElementById('target-id');
+        const startBtn = document.getElementById('start-btn');
+
+        if (!targetId) {
+            statusText.textContent = "Error: No target ID found in URL.";
+            statusIcon.classList.replace('bg-yellow-500', 'bg-red-500');
+        } else {
+            targetIdText.textContent = `Target: ${targetId}`;
+        }
+
+        const peer = new Peer();
+        let conn;
+
+        peer.on('open', (id) => {
+            console.log('Mobile peer ID:', id);
+            connectToLaptop();
+        });
+
+        function connectToLaptop() {
+            if (!targetId) return;
+
+            statusText.textContent = "Connecting to laptop...";
+            
+            // 1. Establish Data Connection for metadata
+            conn = peer.connect(targetId);
+            
+            conn.on('open', () => {
+                statusText.textContent = "Connected! Ready to stream.";
+                statusIcon.classList.replace('bg-yellow-500', 'bg-green-500');
+                statusIcon.classList.remove('animate-pulse');
+                startBtn.disabled = false;
+                
+                // Initial orientation send
+                sendOrientation();
+            });
+
+            conn.on('close', () => {
+                statusText.textContent = "Connection lost. Please refresh.";
+                statusIcon.classList.replace('bg-green-500', 'bg-red-500');
+                startBtn.disabled = true;
+            });
+        }
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                // 2. Start Screen Capture
+                // iOS requires this to be inside a click handler
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
+                });
+
+                statusText.textContent = "Streaming screen...";
+                startBtn.textContent = "MIRRORING ACTIVE";
+                startBtn.classList.replace('bg-blue-600', 'bg-green-600');
+                
+                // 3. Initiate Video Call
+                const call = peer.call(targetId, stream);
+                
+                stream.getVideoTracks()[0].onended = () => {
+                    statusText.textContent = "Stream ended.";
+                    startBtn.textContent = "RESTART MIRRORING";
+                    startBtn.classList.replace('bg-green-600', 'bg-blue-600');
+                };
+
+            } catch (err) {
+                console.error("Screen capture failed:", err);
+                alert("Could not start screen capture. Make sure you are using Safari and allowed the permission.");
+            }
+        });
+
+        // 4. Handle Orientation Changes
+        function sendOrientation() {
+            if (conn && conn.open) {
+                const orientation = window.orientation || 0;
+                conn.send({
+                    type: 'orientation',
+                    value: orientation
+                });
+            }
+        }
+
+        window.addEventListener('orientationchange', () => {
+            console.log('Orientation changed to:', window.orientation);
+            sendOrientation();
+        });
+
+        // Fallback for newer devices
+        if (screen.orientation) {
+            screen.orientation.addEventListener('change', () => {
+                let angle = 0;
+                if (screen.orientation.type.includes('landscape-primary')) angle = 90;
+                if (screen.orientation.type.includes('landscape-secondary')) angle = -90;
+                if (screen.orientation.type.includes('portrait-secondary')) angle = 180;
+                
+                if (conn && conn.open) {
+                    conn.send({
+                        type: 'orientation',
+                        value: angle
+                    });
+                }
+            });
+        }
+
+        peer.on('error', (err) => {
+            console.error('Peer error:', err);
+            statusText.textContent = "Error: " + err.type;
+            statusIcon.classList.replace('bg-yellow-500', 'bg-red-500');
+        });
+    </script>
+</body>
+</html>
