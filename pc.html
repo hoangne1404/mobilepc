@@ -28,6 +28,11 @@
 <body class="bg-gray-900 text-white overflow-hidden">
     <div id="setup-screen" class="flex flex-col items-center justify-center min-h-screen space-y-8">
         <h1 class="text-3xl font-bold">Screen Mirroring - Laptop Receiver</h1>
+        
+        <div id="security-warning" class="hidden bg-red-600/20 border border-red-500 p-4 rounded-xl text-red-400 text-sm max-w-md text-center">
+            ⚠️ <strong>Secure Context Required:</strong> This receiver must be hosted on HTTPS for your phone to connect and share its screen.
+        </div>
+
         <div id="qrcode" class="p-4 bg-white rounded-lg"></div>
         <p class="text-gray-400">Scan this QR code with your iOS device to start mirroring</p>
         <div id="status" class="text-yellow-500 font-mono">Initializing Peer...</div>
@@ -44,8 +49,21 @@
         const remoteVideo = document.getElementById('remote-video');
         const qrContainer = document.getElementById('qrcode');
 
+        // Check Security Context
+        if (window.isSecureContext === false && window.location.hostname !== 'localhost') {
+            document.getElementById('security-warning').classList.remove('hidden');
+        }
+
         // Generate a random ID for this session
-        const peer = new Peer();
+        const peer = new Peer(null, {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                ]
+            }
+        });
 
         peer.on('open', (id) => {
             console.log('My peer ID is: ' + id);
